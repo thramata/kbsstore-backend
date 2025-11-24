@@ -1,10 +1,8 @@
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
-from datetime import datetime
-
 
 # -----------------------------------------------------------------------------------------
-# SCHÉMA UTILISATEUR POUR LECTURE (RETOUR API)
+# SCHÉMA UTILISATEUR POUR LECTURE
 # -----------------------------------------------------------------------------------------
 class UserOut(BaseModel):
     id: str = Field(..., alias="_id")
@@ -12,14 +10,13 @@ class UserOut(BaseModel):
     email: EmailStr
     role: str = "user"
 
-    class Config:
-        allow_population_by_field_name = True
-        orm_mode = True
+    model_config = {
+        "populate_by_name": True
+    }
 
 
 # -----------------------------------------------------------------------------------------
 # SCHÉMA POUR CRÉATION UTILISATEUR
-# (NE PAS METTRE LE MOT DE PASSE APRÈS CRÉATION)
 # -----------------------------------------------------------------------------------------
 class UserCreate(BaseModel):
     name: str = Field(..., min_length=2)
