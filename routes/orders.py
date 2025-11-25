@@ -1,111 +1,57 @@
 from fastapi import APIRouter, HTTPException, Depends
+from config.database import db, serialize_doc
 from bson import ObjectId
 from datetime import datetime
+from routes.auth import get_current_user
+from pydantic import BaseModel
+from typing import List
 
-from config.database import db, serialize_doc, serialize_list, validate_object_id
-from routes.auth import get_current_user, admin_required
+router = APIRouter(prefix="/orders")
 
-router = APIRouter()
+class OrderItem(BaseModel):
+    product_id: str
+    quantity: int
 
+class OrderSchema(BaseModel):
+    user_id: str
+    items: List[OrderItem]
 
-# -----------------------------------------------------------------------------------------
-#  UTILITAIRE — CALCUL TOTAL COMMANDE
-# -----------------------------------------------------------------------------------------
-
-async def calculate_order_total(items):
-    """
-    items = [{"_id": "...", "quantity": 2}, ...]
-    """
+@router.post("")
+async def create_order(data: OrderSchema, user=Depends(get_current_user)):
+    # validate and compute total
+    items_stored = []
     total = 0
-
-    for item in items:
-        product_id = validate_object_id(item["_id"])
-        quantity = item.get("quantity", 1)
-
-        product = await db.products.find_one({"_id": product_id})
+    for it in data.items:
+        if not ObjectId.is_valid(it.product_id):
+            raise HTTPException(status_code=400, detail="ID produit invalide")
+        product = await db.products.find_one({"_id": ObjectId(it.product_id)})
         if not product:
-            raise HTTPException(status_code=404, detail=f"Produit introuvable : {item['_id']}")
-
-        total += product["price"] * quantity
-
-    return total
-
-
-# -----------------------------------------------------------------------------------------
-#  CREATION COMMANDE (client)
-# -----------------------------------------------------------------------------------------
-
-@router.post("/")
-async def create_order(data: dict, user=Depends(get_current_user)):
-    """
-    data = {
-        "items": [
-            {"_id": "id produit", "quantity": 2},
-            ...
-        ]
-    }
-    """
-    items = data.get("items", [])
-
-    if not items or not isinstance(items, list):
-        raise HTTPException(status_code=400, detail="Items invalides.")
-
-    # Calcul total
-    total = await calculate_order_total(items)
+            raise HTTPException(status_code=404, detail="Produit introuvable")
+        amount = product.get("price", 0) * it.quantity
+        total += amount
+        items_stored.append({"product_id": ObjectId(it.product_id), "quantity": it.quantity, "price": product.get("price", 0)})
 
     order = {
-        "user_id": user["_id"],
-        "items": items,
+        "user_id": ObjectId(data.user_id),
+        "items": items_stored,
         "total": total,
-        "status": "pending",
-        "created_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow(),
+        "created_at": datetime.utcnow()
     }
-
     res = await db.orders.insert_one(order)
+    o = await db.orders.find_one({"_id": res.inserted_id})
+    return serialize_doc(o)
 
-    return {
-        "message": "Commande créée.",
-        "order_id": str(res.inserted_id),
-        "total": total
-    }
+@router.get("/user/{user_id}")
+async def get_orders_by_user(user_id: str, user=Depends(get_current_user)):
+    if not ObjectId.is_valid(user_id):
+        raise HTTPException(status_code=400, detail="ID invalide")
+    cursor = db.orders.find({"user_id": ObjectId(user_id)})
+    orders = await cursor.to_list(length=1000)
+    return [serialize_doc(o) for o in orders]
 
-
-# -----------------------------------------------------------------------------------------
-#  MES COMMANDES (client)
-# -----------------------------------------------------------------------------------------
-
-@router.get("/mine")
-async def my_orders(user=Depends(get_current_user)):
-    orders = await db.orders.find({"user_id": user["_id"]}).sort("created_at", -1).to_list(100)
-    return serialize_list(orders)
-
-
-# -----------------------------------------------------------------------------------------
-#  TOUTES LES COMMANDES (admin)
-# -----------------------------------------------------------------------------------------
-
-@router.get("/")
-async def get_all_orders(user=Depends(admin_required)):
-    orders = await db.orders.find().sort("created_at", -1).to_list(200)
-    return serialize_list(orders)
-
-
-# -----------------------------------------------------------------------------------------
-#  DETAILS COMMANDE
-# -----------------------------------------------------------------------------------------
-
-@router.get("/{order_id}")
-async def get_order(order_id: str, user=Depends(get_current_user)):
-    oid = validate_object_id(order_id)
-
-    order = await db.orders.find_one({"_id": oid})
-
-    if not order:
-        raise HTTPException(status_code=404, detail="Commande introuvable.")
-
-    # Si utilisateur normal → ne peut voir que ses commandes
-    if user["role"] != "admin" and order["user_id"] != user["_id"]:
-        raise HTTPException(status_code=403, detail="Accès refusé.")
-
-    return serialize_doc(order)
+@router.get("")
+async def get_all_orders(user=Depends(get_current_user)):
+    # admin only? add admin_required if needed
+    cursor = db.orders.find({})
+    orders = await cursor.to_list(length=1000)
+    return [serialize_doc(o) for o in orders]
