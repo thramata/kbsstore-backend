@@ -29,3 +29,4 @@ python-dateutil
 
 # Si tu utilises dotenv (facultatif)
 python-dotenv
+requests
