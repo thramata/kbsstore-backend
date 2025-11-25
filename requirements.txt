@@ -1,10 +1,31 @@
-fastapi==0.110.0
-uvicorn==0.29.0
-pymongo==4.6.1
-python-dotenv==1.0.1
-passlib==1.7.4
-bcrypt==4.1.2
-python-jose==3.3.0
-python-multipart==0.0.9
-requests==2.31.0
+fastapi
+uvicorn
+
+# MongoDB (async)
+motor
+pymongo[srv]
+
+# Auth / JWT
+python-jose
+python-jose[cryptography]
+
+# Password hashing
+passlib[argon2]
+
+# Upload de fichiers
+python-multipart
+
+# Email validation (pour EmailStr)
 email-validator
+
+# CORS si tu l'utilises
+starlette
+
+# Utilisé par FastAPI (garde-le)
+pydantic
+
+# Si tu veux gérer les dates proprement
+python-dateutil
+
+# Si tu utilises dotenv (facultatif)
+python-dotenv
